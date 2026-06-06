@@ -92,7 +92,7 @@ flowchart LR
     C --> D
     D --> H[top-k Hits]
     H --> M[metrics aggregate]
-    M --> R[results/metrics.json + queries.jsonl + layout.json]
+    M --> R["results/metrics.json + queries.jsonl + layout.json"]
     R --> V[viz.charts]
     V --> F[5 figures]
 ```
