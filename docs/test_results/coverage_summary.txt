@@ -1,0 +1,21 @@
+..........                                                               [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.14-final-0 _______________
+
+Name                                Stmts   Miss  Cover
+-------------------------------------------------------
+src/cps/__init__.py                     1      0   100%
+src/cps/cli/__init__.py                 0      0   100%
+src/cps/cli/main.py                    24     24     0%
+src/cps/encoders/__init__.py            0      0   100%
+src/cps/encoders/colpali_synth.py      31      0   100%
+src/cps/index/__init__.py               0      0   100%
+src/cps/runner.py                      54     54     0%
+src/cps/scoring/__init__.py             0      0   100%
+src/cps/scoring/maxsim.py              12      0   100%
+src/cps/scoring/metrics.py             35     10    71%
+src/cps/types.py                       23      0   100%
+src/cps/viz/__init__.py                 0      0   100%
+src/cps/viz/charts.py                 181    181     0%
+-------------------------------------------------------
+TOTAL                                 361    269    25%
