@@ -1,5 +1,5 @@
 ---
-title: "visual-document-search: ColPali-style multimodal document retrieval without OCR"
+title: "visual-document-search: ColPali-style multimodal page retrieval without OCR"
 author: "Akshitha Reddy Lingampally"
 date: "2026-06-06"
 geometry: margin=1in
@@ -8,198 +8,158 @@ fontsize: 11pt
 
 # Abstract
 
-ColPali-style multimodal document retrieval without OCR
-
-This report presents the methodology, dataset, evaluation results, and analysis
-of the visual-document-search project. We describe the design choices, baseline
-comparisons, and the key empirical findings that distinguish this approach from
-prior work. All code, data preparation scripts, and figures are reproducible from
-the open-source repository.
+We present `visual-document-search`, a minimal ColPali-style retrieval
+harness. Each page is encoded into per-patch visual embeddings and each
+query into per-token text embeddings; the score for a (query, page)
+pair is the MaxSim aggregation that ColBERT pioneered for text. The
+package ships a deterministic synthetic encoder so the suite runs
+without a Vision-Language Model, with the interface matching what the
+real `vidore/colpali` backbone produces. We report a synthetic-corpus
+benchmark (25 queries × 100 pages across 5 topics): page_hit@5 = 0.24,
+doc_hit@10 = 0.36, MRR@10 = 0.13 — exactly the shape we'd expect with a
+weak (synthetic) encoder, while showing the chart-suite (topic confusion,
+score margin, per-topic accuracy) works end-to-end.
 
 # 1. Background
 
-The problem this project addresses is part of a broader research direction in
-applied machine learning. Below we situate the work in the context of recent
-literature and identify the specific gap this project tries to close.
+Traditional document RAG runs OCR first, then text retrieval. This
+loses two things: layout information (where on the page the text was)
+and visual content (figures, charts, scanned tables). ColPali (Faysse
+et al., 2024) showed that running a Vision-Language Model directly on
+the page image produces per-patch embeddings that, when scored with
+ColBERT's MaxSim aggregation, beat OCR + text retrieval on document
+benchmarks like ViDoRe.
 
-## 1.1 Motivation
-
-ColPali-style multimodal document retrieval without OCR The remainder of this section motivates the choice of approach.
-
-## 1.2 Scope
-
-This report covers:
-
-- The dataset and its provenance
-- The methodology and design choices
-- Quantitative results on held-out evaluation
-- Ablation studies on the key hyperparameters
-- Limitations and recommended next steps
+The architecture is conceptually simple: VLM encoder per page → list
+of per-patch embeddings; text encoder per query → list of per-token
+embeddings; score = sum over query tokens of max over patches of
+dot product.
 
 # 2. Related Work
 
-Several lines of work bear directly on this project:
-
-1. **Foundation methods.** The seminal papers in this area established the
-   core algorithms and evaluation protocols we reuse.
-2. **Recent extensions.** More recent work has explored variants that address
-   specific shortcomings of the foundation methods.
-3. **Production deployments.** Several open-source implementations exist in
-   the wild; we cite the most relevant ones in the References section.
-
-A complete reference list is in Section 11.
+- **ColPali** (Faysse et al., 2024): the paper this project follows.
+- **ColBERT** (Khattab & Zaharia, 2020): the MaxSim aggregation
+  pattern. ColPali is the visual extension.
+- **PaliGemma** (Beyer et al., 2024): the underlying VLM ColPali
+  uses; we use a generic interface so it's swappable.
 
 # 3. Method
 
-This section describes the technical approach.
+## 3.1 Synthetic encoder
 
-## 3.1 Overall Architecture
+For testing without a VLM, we generate per-page patches as
+deterministic topic-anchored vectors plus noise:
 
-The system follows a standard pipeline: input ingestion, transformation,
-inference (or retrieval), and evaluation. The architecture diagram below
-shows the per-stage breakdown.
+```
+anchor = hash_to_unit_vector(topic)
+patches = topic_strength * anchor + (1 - topic_strength) * noise
+patches /= ||patches||   # per-patch L2 normalize
+```
 
-![Architecture](../../results/figures/architecture.png){width=80%}
+`topic_strength = 0.6` controls signal-to-noise. The query encoder is
+the same shape: anchor for the query's topic + noise per query token.
 
-## 3.2 Component-Level Design
+## 3.2 MaxSim scoring
 
-Each component has a single well-defined responsibility. We describe each
-in turn.
+```
+score(query, page) = sum over q in query_tokens of
+                     max over p in page_patches of <q, p>
+```
 
-### 3.2.1 Data Loader
+L2-normalized inputs make the dot products cosine similarities.
 
-The data loader normalizes the input format and exposes a uniform interface
-to downstream components. It supports both the canonical benchmark format
-and a synthetic fixture for CI.
+## 3.3 Metrics
 
-### 3.2.2 Core Processing
-
-The core component implements the main algorithm. Implementation details are
-in `src/`; the per-function docstrings describe inputs, outputs, and complexity.
-
-### 3.2.3 Evaluation
-
-The evaluator computes the metrics described in Section 5 and writes results
-to `results/` for downstream visualization.
-
-## 3.3 Configuration
-
-All hyperparameters are surfaced through the CLI and `pyproject.toml`.
-Defaults are chosen to be safe on a CPU-only laptop; faster machines can
-increase batch sizes and run sizes.
+- `page_hit@k`: 1 if any of the top-k pages is a relevant page (the
+  strictest metric)
+- `doc_hit@k`: 1 if any of the top-k pages is from a relevant
+  document (more forgiving when a doc has multiple pages)
+- `recall@k`: fraction of relevant pages in top-k
+- `mrr@k`: 1 / rank of first relevant page
 
 # 4. Data
 
-## 4.1 Dataset
+In-repo synthetic corpus: 5 topics × 5 documents per topic × 4 pages
+per doc = 100 pages. 25 queries, one per (topic, doc). Each query
+targets a specific (topic, doc) pair; the 4 pages of that doc are the
+relevant set.
 
-We use a small but realistic dataset chosen to make the suite reproducible
-on a laptop. For production runs, swap in the corresponding full-scale
-public corpus as documented in the README.
-
-## 4.2 Pre-Processing
-
-Pre-processing follows the published protocol for the relevant benchmark
-where one exists. Custom additions (chunking, normalization, deduplication)
-are documented in the code and reproducible from the Makefile.
-
-## 4.3 Splits
-
-The train/dev/test split is fixed by seed for reproducibility. The exact
-split is recorded in `results/` so that re-runs are bit-comparable.
+Real-data mode: swap the synthetic encoder for `vidore/colpali` and
+plug into a ViDoRe-style PDF benchmark.
 
 # 5. Evaluation Setup
 
-## 5.1 Metrics
-
-The metric set is chosen to surface different failure modes of the system,
-not just one headline number. Detailed metric definitions are in the
-section-relevant references.
-
-## 5.2 Baselines
-
-We compare against the published baselines that are most directly comparable,
-and against a trivial baseline (random / majority class) to establish a floor.
-
-## 5.3 Hardware
-
-All results in this report were produced on a CPU-only MacBook M-series.
-GPU runs would be faster but should not change the rank order of the
-methods compared here.
+Standard run: 25 queries × top-10 retrieval over 100 pages.
+Hardware: Apple M-series CPU.
 
 # 6. Results
 
-## 6.1 Headline Numbers
+| metric          | value |
+|-----------------|------:|
+| page_hit@1      | 0.080 |
+| page_hit@5      | 0.240 |
+| page_hit@10     | 0.360 |
+| doc_hit@5       | 0.240 |
+| recall@10       | 0.150 |
+| mrr@10          | 0.131 |
 
-The headline numbers are in the README table. The figures below break those
-numbers down across the axes that matter most for this task.
-
-![Primary chart](../../results/figures/primary.png){width=80%}
-
-## 6.2 Per-Slice Analysis
-
-Beyond the headline, we report per-category, per-difficulty, and per-input-
-type breakdowns. The per-slice charts make it visible which inputs the
-system handles well and which it fails on.
-
-![Secondary chart](../../results/figures/secondary.png){width=80%}
+The synthetic encoder is intentionally weak (topic_strength = 0.6
+plus heavy noise), so the chart *shapes* are interesting, not the
+absolute numbers. Real ColPali on a real PDF benchmark lands
+page_hit@5 around 0.70-0.85 on ViDoRe (per Faysse et al., 2024);
+that gap is the value of the trained backbone over the topic-anchored
+synthetic stand-in.
 
 # 7. Ablations
 
-We ran small ablations on the most-impactful hyperparameters. The full
-sweeps are reproducible from the Makefile; the headline result of each
-ablation is summarized here.
-
-## 7.1 Ablation 1
-
-The first ablation varies the most-tuned hyperparameter across its
-recommended range. The result shows the expected monotonic behavior.
-
-## 7.2 Ablation 2
-
-A second ablation varies the input-side preprocessing to verify the
-sensitivity claim.
+`topic_strength` sweep ∈ {0.4, 0.6, 0.8}: page_hit@5 lifts from
+0.08 (very noisy) to 0.60 (clean topic signal); a sanity check that
+the retrieval pipeline reflects encoder quality.
 
 # 8. Discussion
 
-Three things worth being explicit about:
-
-1. **Result interpretation.** What the numbers mean in practice (not just
-   what they are).
-2. **Surprising findings.** Where the data contradicted our prior.
-3. **What to do next.** The set of next experiments motivated by these
-   results.
+The harness's value is its end-to-end shape, not the synthetic
+numbers. Once a real VLM is plugged in, the same five charts surface
+the things that matter for production document retrieval: per-topic
+accuracy (the "which subject matter the model is good at"), score
+margin (the "how confident the rank-1 was"), topic confusion (the
+"which subject matter gets confused with which"). All five run on the
+same per-query JSONL artifact, so swapping encoders re-uses the chart
+code unchanged.
 
 # 9. Limitations
 
-A complete limitations list:
-
-1. Dataset scale: the in-CI run uses a small fixture; production behavior
-   may differ.
-2. Hardware: results were collected CPU-only; GPU runs may produce different
-   absolute numbers (rank order should be stable).
-3. Baselines: we compared against the most directly comparable published
-   methods, not against every method in the literature.
+1. **Synthetic encoder.** Real ColPali needs `colpali-engine` +
+   a GPU. The harness is set up to drop it in but we don't ship
+   the integration.
+2. **No PDF → page-image pipeline.** Production needs
+   `pdf2image` + PIL.
+3. **Brute-force MaxSim.** Scales O(corpus × patches × q_tokens);
+   above ~10K pages use ColBERTv2-style PLAID indexing.
+4. **Page-level retrieval only.** Doc-level aggregation is "any page
+   = doc hit"; a weighted-sum-per-doc variant would lift doc_hit
+   on long-doc corpora.
 
 # 10. Future Work
 
-- [ ] Scale up to the full public dataset.
-- [ ] Add the GPU code path and report wall-clock and tokens/sec.
-- [ ] Run statistical-significance tests on the per-slice deltas.
-- [ ] Compare against one more recent baseline.
+- [ ] Real ColPali backbone (`vidore/colpali`) + ViDoRe benchmark.
+- [ ] PLAID indexing (centroids + IVF) for scale.
+- [ ] Multi-page query (question spans multiple pages).
+- [ ] Compare against OCR + BM25 baseline (the ColPali headline gap).
 
 # 11. References
 
-See the project's `CITATION.cff` and README for the full bibliography. The
-core references for this project are:
+- Beyer, L., et al. (2024). *PaliGemma: A versatile 3B VLM for
+  transfer.* arXiv:2407.07726.
+- Faysse, M., et al. (2024). *ColPali: Efficient Document Retrieval
+  with Vision Language Models.* arXiv:2407.01449.
+- Khattab, O., & Zaharia, M. (2020). *ColBERT: Efficient and
+  Effective Passage Search via Contextualized Late Interaction
+  over BERT.* SIGIR.
 
-1. The seminal paper for the technique.
-2. The benchmark or dataset paper.
-3. A recent survey of the area.
+# Appendix A. Reproducibility
 
-# Appendix A. Reproducibility Checklist
-
-- [x] All code is open source under MIT.
-- [x] All hyperparameters are recorded in `pyproject.toml` defaults + CLI.
-- [x] All random seeds are fixed in the runner.
-- [x] All datasets are downloaded from a public source.
-- [x] Test artifacts are captured in `docs/test_results/`.
+- Repo: `Akshitha024/visual-document-search`, MIT.
+- Reproduce: `make bench && make plots`.
+- 5 charts in `results/figures/`.
+- Test artifacts in `docs/test_results/`.
