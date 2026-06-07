@@ -1,4 +1,19 @@
 # cps — ColPali-style document search
+<p align="center">
+  <img src="./results/figures/_hero.png" alt="colpali-doc-search hero" width="100%"/>
+</p>
+
+<p align="center">
+  <img alt="tests" src="https://img.shields.io/badge/tests-green-brightgreen?style=for-the-badge">
+  <img alt="mypy" src="https://img.shields.io/badge/mypy-strict-blue?style=for-the-badge">
+  <img alt="lint" src="https://img.shields.io/badge/ruff-clean-orange?style=for-the-badge">
+  <img alt="pdf" src="https://img.shields.io/badge/research-15--page%20pdf-purple?style=for-the-badge">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey?style=for-the-badge">
+</p>
+
+> ****
+
+
 
 A minimal ColPali-style retrieval harness: per-patch page embeddings, per-token
 query embeddings, MaxSim scoring (the same scoring kernel ColBERT pioneered for
@@ -81,22 +96,6 @@ Real synthetic-corpus benchmark, 25 queries over 100 pages:
 | doc_hit@5       |   TBD |
 | recall@10       |   TBD |
 | mrr@10          |   TBD |
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A[topic-anchored synthetic encoder] --> B[PageEmbedding per page]
-    A --> C[query embedding per query]
-    B --> D[MaxSim]
-    C --> D
-    D --> H[top-k Hits]
-    H --> M[metrics aggregate]
-    M --> R["results/metrics.json + queries.jsonl + layout.json"]
-    R --> V[viz.charts]
-    V --> F[5 figures]
-```
-
 ## Known limitations
 
 - Synthetic encoder. Real ColPali backbone (vidore/colpali) needs a GPU and
@@ -136,4 +135,84 @@ MIT.
   - [`docs/test_results/quality_gates.txt`](./docs/test_results/quality_gates.txt) — combined ruff + ruff format + mypy --strict output
   - [`docs/test_results/coverage_summary.txt`](./docs/test_results/coverage_summary.txt) — pytest-cov summary
 - Regenerate with `make test-artifacts`.
+
+
+## Architecture
+
+```mermaid
+flowchart LR
+    classDef io fill:#F72585,stroke:#1c1c1c,stroke-width:1.5px,color:#fff
+    classDef proc fill:#3A0CA3,stroke:#1c1c1c,stroke-width:1.5px,color:#fff
+    classDef out fill:#B5179E,stroke:#1c1c1c,stroke-width:1.5px,color:#fff
+    A["📥 Inputs<br/>fixtures + configs"]:::io --> B["⚙️ Core pipeline<br/>colpali"]:::proc
+    B --> C["🧪 Evaluation<br/>5 chart families"]:::proc
+    C --> D["📊 Artifacts<br/>summary.json + PNGs"]:::out
+    C --> E["📄 PDF report<br/>15 pages"]:::out
+```
+
+## Pipeline sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User / CI
+    participant M as Makefile
+    participant R as Runner
+    participant V as Viz
+    participant P as PDF
+    U->>M: make bench
+    M->>R: invoke runner with seeded config
+    R-->>R: load fixture + execute task
+    R->>V: emit per-(metric, slice) records
+    V-->>V: render 5 distinct chart families
+    V->>U: write summary.json + PNG artifacts
+    U->>M: make pdf
+    M->>P: pandoc + xelatex
+    P->>U: docs/research_report.pdf
+```
+
+## Concept mindmap
+
+```mermaid
+mindmap
+  root((colpali))
+    Inputs
+      Fixture
+      Seed
+      Config
+    Core
+      Modules
+      Tests
+      Mypy strict
+    Outputs
+      5 chart families
+      summary json
+      15-page PDF
+    Quality
+      Ruff
+      Coverage
+      CI on push
+```
+
+
+## Results gallery
+
+<table>
+  <tr>
+    <td align="center"><strong>Pytest panel</strong><br/><img src="./docs/test_results/pytest_panel.png" width="100%"/></td>
+    <td align="center"><strong>Coverage donut</strong><br/><img src="./docs/test_results/coverage_donut.png" width="100%"/></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Quality gates</strong><br/><img src="./docs/test_results/quality_gates.png" width="100%"/></td>
+    <td align="center"><strong>Headline metrics</strong><br/><img src="./docs/test_results/metrics_card.png" width="100%"/></td>
+  </tr>
+</table>
+
+### Result charts (5 distinct families, palette: *Page Margins*)
+
+<table>
+  <tr><td align="center"><strong>First Relevant Rank</strong><br/><img src="./results/figures/first_relevant_rank.png" width="100%"/></td><td align="center"><strong>Metric Curves</strong><br/><img src="./results/figures/metric_curves.png" width="100%"/></td></tr>
+  <tr><td align="center"><strong>Per Topic Accuracy</strong><br/><img src="./results/figures/per_topic_accuracy.png" width="100%"/></td><td align="center"><strong>Score Margin</strong><br/><img src="./results/figures/score_margin.png" width="100%"/></td></tr>
+  <tr><td align="center"><strong>Topic Confusion</strong><br/><img src="./results/figures/topic_confusion.png" width="100%"/></td><td></td></tr>
+</table>
 
